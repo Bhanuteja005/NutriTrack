@@ -4,10 +4,10 @@ import 'dotenv/config'; // Load environment variables from .env file
 import express from 'express';
 import { doc, getDoc } from 'firebase/firestore';
 import { marked } from 'marked';
-import { auth, db } from "../src/config/firebase.js"; // Corrected import path
+import { auth, db } from "./firebase.js";
 
 const app = express();
-const PORT = process.env.PORT || 3001; // Use PORT from env or default to 3001
+const PORT = 3001;
 
 // Enable CORS for all routes
 app.use(cors());
@@ -17,13 +17,20 @@ const fetchUserDocument = async (userId) => {
   try {
     const userDocRef = doc(db, "Demographics", userId);
     const userDoc = await getDoc(userDocRef);
+
     if (userDoc.exists()) {
+      const data = userDoc.data();
+      console.log("Fetched user data:", data);
       return {
-        allergies: userDoc.data().Allergies || [],
-        chronicDiseases: userDoc.data().ChronicDiseases || [],
+        allergies: data.Allergies || [],
+        chronicDiseases: data.ChronicDiseases || [],
       };
     } else {
-      return { allergies: [], chronicDiseases: [] };
+      console.log("No user document found.");
+      return {
+        allergies: [],
+        chronicDiseases: [],
+      };
     }
   } catch (error) {
     console.error("Error fetching user document:", error);
@@ -33,7 +40,11 @@ const fetchUserDocument = async (userId) => {
 
 // SSE Endpoint
 app.get("/recipestream", async (req, res) => {
-  const { ingredients, mealType, cuisine, cookingTime, complexity } = req.query;
+  const ingredients = req.query.ingredients;
+  const mealType = req.query.mealType;
+  const cuisine = req.query.cuisine;
+  const cookingTime = req.query.cookingTime;
+  const complexity = req.query.complexity;
 
   console.log("Received request with query parameters:", req.query);
 
@@ -41,14 +52,15 @@ app.get("/recipestream", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
+  // Function to send the entire response
   const sendEvent = (response) => {
     console.log("Sending response:", response);
     res.send(response);
   };
 
+  // Fetch user data if user is authenticated
   let userData = { allergies: [], chronicDiseases: [] };
   const user = auth.currentUser;
-  
   if (user) {
     try {
       userData = await fetchUserDocument(user.uid);
@@ -57,19 +69,24 @@ app.get("/recipestream", async (req, res) => {
     }
   }
 
-  const prompt = [
-    "Generate a recipe that incorporates the following details:",
-    `[Ingredients: ${ingredients}]`,
-    `[Meal Type: ${mealType}]`,
-    `[Cuisine Preference: ${cuisine}]`,
-    `[Cooking Time: ${cookingTime}]`,
-    `[Complexity: ${complexity}]`,
-    `[Allergies: ${userData.allergies.join(", ")}]`,
-    `[Chronic Diseases: ${userData.chronicDiseases.join(", ")}]`,
-    "Please provide a detailed recipe, including steps for preparation and cooking. Only use the ingredients provided.",
-    "The recipe should highlight the fresh and vibrant flavors of the ingredients.",
+  const prompt = [];
+  prompt.push("Generate a recipe that incorporates the following details:");
+  prompt.push(`Ingredients: ${ingredients}`);
+  prompt.push(`Meal Type: ${mealType}`);
+  prompt.push(`Cuisine Preference: ${cuisine}`);
+  prompt.push(`Cooking Time: ${cookingTime}`);
+  prompt.push(`Complexity: ${complexity}`);
+  prompt.push(`Allergies: ${userData.allergies.join(", ")}`);
+  prompt.push(`Chronic Diseases: ${userData.chronicDiseases.join(", ")}`);
+  prompt.push(
+    "Please provide a detailed recipe, including steps for preparation and cooking. Only use the ingredients provided."
+  );
+  prompt.push(
+    "The recipe should highlight the fresh and vibrant flavors of the ingredients."
+  );
+  prompt.push(
     "Also give the recipe a suitable name in its local language based on cuisine preference."
-  ];
+  );
 
   run(prompt, sendEvent);
 
@@ -79,26 +96,30 @@ app.get("/recipestream", async (req, res) => {
 });
 
 const API_KEY = process.env.GOOGLE_API_KEY; 
+console.log("Using API Key:", API_KEY); // Log the API key being used
 if (!API_KEY) {
   console.error("API Key is not defined. Please check your .env file.");
-  process.exit(1); // Exit the process if API key is not defined
 }
-const genAI = new GoogleGenerativeAI(API_KEY);
+const genAI = new GoogleGenerativeAI({ apiKey: API_KEY });
 
 async function run(prompt, callback) {
   try {
+    console.log("Using API Key inside run function:", API_KEY); // Log the API key being used inside the function
+    // The Gemini 1.5 models are versatile and work with both text-only and multimodal prompts
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
     const result = await model.generateContent(prompt);
     
     const response = result.response;
-    if (response && response.candidates?.[0]?.content?.parts) {
+    if (response && response.candidates && response.candidates[0] && response.candidates[0].content && response.candidates[0].content.parts) {
       const generatedText = marked(response.candidates[0].content.parts.map(part => part.text).join("\n"));
+      console.log("Generated Text:", generatedText);
       callback(generatedText);  // Send the generated text to the client
     } else {
       console.log("No valid response structure found.");
     }
   } catch (error) {
     console.error("Error generating content:", error);
+    console.error("Error details:", error);
   }
 }
 

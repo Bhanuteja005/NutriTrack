@@ -148,8 +148,13 @@ function Recipes() {
     const queryParams = new URLSearchParams(recipeInputs).toString();
 
     // Open an SSE connection with these query parameters
-    setUrl(`http://localhost:3001/recipestream?${queryParams}`);
-    eventSourceRef.current = new EventSource(url);
+    const newUrl = `http://localhost:3001/recipestream?${queryParams}`;
+    setUrl(newUrl);
+    eventSourceRef.current = new EventSource(newUrl);
+
+    eventSourceRef.current.onmessage = (event) => {
+      setRecipeText(event.data);
+    };
 
     eventSourceRef.current.onerror = () => {
       eventSourceRef.current.close();
