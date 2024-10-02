@@ -7,10 +7,17 @@ import { marked } from 'marked';
 import { auth, db } from "./firebase.js";
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001; // Use environment variable for port if available
 
 // Enable CORS for all routes
 app.use(cors());
+
+// Set COOP and CORP headers
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  next();
+});
 
 // Function to fetch user document from Firebase
 const fetchUserDocument = async (userId) => {
@@ -122,6 +129,11 @@ async function run(prompt, callback) {
     console.error("Error details:", error);
   }
 }
+
+// Catch-all route for handling 404 errors
+app.use((req, res, next) => {
+  res.status(404).send("404: NOT_FOUND");
+});
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
